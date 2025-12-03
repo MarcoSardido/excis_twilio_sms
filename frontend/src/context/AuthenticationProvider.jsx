@@ -1,118 +1,57 @@
-import React, { useContext, useState } from "react"
+import PropTypes from "prop-types";
+import { createContext, useContext, useState, useEffect } from "react";
 
-/**
- * Types of authentication
- * @enum {string}
- */
-export const AuthenticationMethod = {
-  AUTH_TOKEN: "auth-token",
-  API_KEY: "api-key",
-  NONE: "none",
-}
-
-export class Authentication {
-  /**
-   * @param {string} accountSid
-   * @param {string} authToken
-   * @param {string} apiKey
-   * @param {string} apiSecret
-   * @param {AuthenticationMethod} method
-   */
-  constructor(accountSid = "", authToken = "", apiKey = "", apiSecret = "", method = AuthenticationMethod.NONE) {
-    this.accountSid = accountSid
-    this.authToken = authToken
-    this.apiKey = apiKey
-    this.apiSecret = apiSecret
-    this.method = method
-  }
-}
-
-/**
- * @param {Authentication} authentication
- */
-export const toCredentials = authentication => {
-  switch (authentication.method) {
-    case AuthenticationMethod.API_KEY:
-      return {
-        username: authentication.apiKey,
-        password: authentication.apiSecret,
-        method: authentication.method,
-      }
-    case AuthenticationMethod.AUTH_TOKEN:
-      return {
-        username: authentication.accountSid,
-        password: authentication.authToken,
-        method: authentication.method,
-      }
-    default:
-      return new Authentication()
-  }
-}
-
-/**
- * Maps authentication errors to more user-friendly error messages.
- *
- * @param {Error} err - The error object to map.
- * @returns {Error} - A new Error object with a more user-friendly message, or the original error if it doesn't match specific cases.
- */
-export const mapAuthenticationError = err => {
-  if (err instanceof Error && err.message === "Network Error") {
-    return new Error("Incorrect credentials or unable to access your Twilio account")
-  } else if (err instanceof Error && err.message === "Request failed with status code 401") {
-    return new Error("Incorrect credentials")
-  } else {
-    return err
-  }
-}
-
-const fromEnvironmentVariables = () => {
-  // Prefer fixed Twilio credentials so once Keycloak has authenticated the user,
-  // the app is already authorized to talk to Twilio without going through the UI.
-  const accountSidFromToken = import.meta.env.VITE_TWILIO_ACCOUNT_SID
-  const authToken = import.meta.env.VITE_TWILIO_AUTH_TOKEN
-
-  if (accountSidFromToken && authToken) {
-    return new Authentication(accountSidFromToken, authToken, undefined, undefined, AuthenticationMethod.AUTH_TOKEN)
-  }
-
-  // Fallback: original API key–based env vars, if you still want to use them.
-  const accountSid = import.meta.env.VITE_AUTHENTICATION_ACCOUNT_SID
-  const apiKey = import.meta.env.VITE_AUTHENTICATION_API_KEY
-  const apiSecret = import.meta.env.VITE_AUTHENTICATION_API_SECRET
-  if (accountSid !== undefined && apiKey !== undefined && apiSecret !== undefined) {
-    return new Authentication(accountSid, undefined, apiKey, apiSecret, AuthenticationMethod.API_KEY)
-  }
-
-  return new Authentication()
-}
-
-const AuthenticationReadContext = React.createContext({})
-const AuthenticationWriteContext = React.createContext(p => {})
-let authenticationCache = fromEnvironmentVariables()
-
-export const getAuthentication = () => authenticationCache
-
-/**
- * @returns {[Authentication, function(Authentication)]}
- */
-export const useAuthentication = () => {
-  const value = useContext(AuthenticationReadContext)
-  const setValue = useContext(AuthenticationWriteContext)
-  return [value, setValue]
-}
+// Create context with default values
+const AuthenticationContext = createContext({
+  authentication: null,
+  loading: true,
+});
 
 export const AuthenticationProvider = ({ children }) => {
-  const [value, setValue] = useState(authenticationCache)
+  const [authentication, setAuthentication] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchAuthentication = async () => {
+      try {
+        const res = await fetch(
+          `${import.meta.env.VITE_PRODUCTION_URL || "http://localhost:3001"}/twilio-sms-web/api/me`,
+          { credentials: "include" }
+        );
+
+        if (res.ok) {
+          const data = await res.json();
+          setAuthentication(data.user);
+        } else {
+          setAuthentication(null);
+        }
+      } catch (err) {
+        console.error("Failed to fetch authentication:", err);
+        setAuthentication(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAuthentication();
+  }, []);
+
   return (
-    <AuthenticationReadContext.Provider value={value}>
-      <AuthenticationWriteContext.Provider
-        value={auth => {
-          authenticationCache = auth
-          setValue(auth)
-        }}
-      >
-        {children}
-      </AuthenticationWriteContext.Provider>
-    </AuthenticationReadContext.Provider>
-  )
-}
+    <AuthenticationContext.Provider value={{ authentication, loading }}>
+      {children}
+    </AuthenticationContext.Provider>
+  );
+};
+
+AuthenticationProvider.propTypes = {
+  children: PropTypes.node.isRequired,
+};
+
+// Hook to use authentication inside components
+export const useAuthentication = () => useContext(AuthenticationContext);
+
+// ✅ Optional: a reusable custom hook that returns only authentication
+export const useCurrentAuthentication = () => {
+  const { authentication } = useContext(AuthenticationContext);
+  return authentication;
+};

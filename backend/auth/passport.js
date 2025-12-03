@@ -1,4 +1,7 @@
 // auth/passport.js
+import dotenv from "dotenv";
+dotenv.config(); // ensure environment variables are loaded
+
 import { Strategy as OpenIDConnectStrategy } from "passport-openidconnect";
 
 export const setupPassport = (passport) => {
@@ -9,6 +12,10 @@ export const setupPassport = (passport) => {
     KEYCLOAK_CLIENT_SECRET,
     BACKEND_BASE_URL,
   } = process.env;
+
+  if (!KEYCLOAK_BASE_URL || !KEYCLOAK_REALM || !KEYCLOAK_CLIENT_ID || !KEYCLOAK_CLIENT_SECRET || !BACKEND_BASE_URL) {
+    throw new Error("Missing required Keycloak environment variables. Please check your .env file.");
+  }
 
   const authorizationURL = `${KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/auth`;
   const tokenURL = `${KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token`;
@@ -29,7 +36,6 @@ export const setupPassport = (passport) => {
         scope: "openid profile email",
       },
       function (issuer, sub, profile, accessToken, refreshToken, params, done) {
-        // profile may be empty; create a user object from tokens or userinfo
         const user = {
           id: sub,
           profile,
@@ -43,8 +49,6 @@ export const setupPassport = (passport) => {
   );
 
   passport.serializeUser((user, done) => {
-    console.log("serializeUser", user);
-    // store minimal info in session
     done(null, { id: user.id, profile: user.profile, idToken: user.idToken });
   });
 

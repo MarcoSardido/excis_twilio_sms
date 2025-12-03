@@ -1,79 +1,67 @@
-import axios from "axios"
-import { getAuthentication, toCredentials } from "../context/AuthenticationProvider"
-import { MessageDirection } from "./types"
-
 /**
- * @typedef {import('./types').Message} Message
+ * @typedef {Object} Message
+ * @property {string} messageSid
+ * @property {string} from
+ * @property {string} to
+ * @property {string} body
+ * @property {string} date
+ * @property {"sent"|"received"} direction
+ * @property {"sending"|"failed"|"undelivered"|string} [status]
+ * @property {number} [media]
+ * @property {boolean} [hasMedia]
  */
 
-const toMessage = (v = {}) => ({
-  messageSid: v.sid,
-  direction: v.direction.includes("inbound") ? MessageDirection.received : MessageDirection.sent,
-  from: v.from,
-  to: v.to,
-  date: v.date_created,
-  status: v.status,
-  body: v.body,
-  media: parseInt(v.num_media),
-})
-
-export const sortByDate = (a, b) => (Date.parse(a.date) > Date.parse(b.date) ? -1 : 1)
-
 /**
- * @param {string} phoneNumber
- * @returns {Array<Message>}
+ * Backend base URL
  */
-export const getTwilioMessagesByPhoneNumber = async phoneNumber => {
-  const authentication = getAuthentication()
-  const credentials = toCredentials(authentication)
-  const url = `https://api.twilio.com/2010-04-01/Accounts/${authentication.accountSid}/Messages.json`
-  const fromResult = await axios.get(url, {
-    auth: credentials,
-    params: { From: phoneNumber },
-  })
-  const toResult = await axios.get(url, {
-    auth: credentials,
-    params: { To: phoneNumber },
-  })
-  return [].concat(fromResult.data.messages).concat(toResult.data.messages).map(toMessage).sort(sortByDate)
-}
+const BACKEND_URL = import.meta.env.VITE_PRODUCTION_URL || "http://localhost:3001";
 
 /**
+ * Fetch messages from Twilio API
+ * @param {string} [from]
+ * @param {string} [to]
  * @returns {Promise<Array<Message>>}
  */
-export const getTwilioMessages = async (from = "", to = "") => {
-  const authentication = getAuthentication()
-  const credentials = toCredentials(authentication)
-  const url = `https://api.twilio.com/2010-04-01/Accounts/${authentication.accountSid}/Messages.json`
+export const getTwilioMessages = async (from, to) => {
+  const queryParams = new URLSearchParams();
+  if (from) queryParams.append("from", from);
+  if (to) queryParams.append("to", to);
 
-  const params = {}
-  if (to.length > 0) {
-    params.To = to
+  const res = await fetch(`${BACKEND_URL}/twilio-sms-web/api/messages?${queryParams.toString()}`, {
+    credentials: "include",
+  });
+
+  if (!res.ok) {
+    throw new Error("Failed to fetch Twilio messages");
   }
 
-  if (from.length > 0) {
-    params.From = from
-  }
-
-  const response = await axios.get(url, {
-    auth: credentials,
-    params,
-  })
-
-  return response.data.messages.map(toMessage).sort(sortByDate)
-}
+  const messages = await res.json();
+  return messages;
+};
 
 /**
+ * Fetch a single Twilio message by SID
+ * @param {string} messageSid
  * @returns {Promise<Message>}
  */
-export const getTwilioMessage = async (messageSid = "") => {
-  const authentication = getAuthentication()
-  const credentials = toCredentials(authentication)
-  const url = `https://api.twilio.com/2010-04-01/Accounts/${authentication.accountSid}/Messages/${messageSid}.json`
+export const getTwilioMessage = async (messageSid) => {
+  const res = await fetch(`${BACKEND_URL}/twilio-sms-web/api/messages/${messageSid}`, {
+    credentials: "include",
+  });
 
-  const response = await axios.get(url, {
-    auth: credentials,
-  })
+  if (!res.ok) {
+    throw new Error(`Failed to fetch Twilio message with SID ${messageSid}`);
+  }
 
-  return toMessage(response.data)
-}
+  const message = await res.json();
+  return message;
+};
+
+/**
+ * Sort messages by date ascending
+ * @param {Array<Message>} messages
+ * @returns {Array<Message>}
+ */
+export const sortByDate = (messages) => {
+  return [...messages].sort((a, b) => new Date(a.date) - new Date(b.date));
+};

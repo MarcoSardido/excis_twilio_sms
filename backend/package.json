@@ -20,7 +20,8 @@
     "express-session": "^1.18.2",
     "morgan": "^1.10.1",
     "passport": "^0.7.0",
-    "passport-openidconnect": "^0.1.2"
+    "passport-openidconnect": "^0.1.2",
+    "twilio": "^5.10.6"
   },
   "devDependencies": {
     "nodemon": "^3.1.11"
